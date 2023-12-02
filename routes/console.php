@@ -1,19 +1,46 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
+use App\Models\Embedding;
 use Illuminate\Support\Facades\Artisan;
+use OpenAI\Laravel\Facades\OpenAI;
+use Pgvector\Laravel\Vector;
 
-/*
-|--------------------------------------------------------------------------
-| Console Routes
-|--------------------------------------------------------------------------
-|
-| This file is where you may define all of your Closure based console
-| commands. Each Closure is bound to a command instance allowing a
-| simple approach to interacting with each command's IO methods.
-|
-*/
+Artisan::command('insert', function() {
+    $sayings = [
+        'Felines say meow',
+        'Canines say woof',
+        'Birds say tweet',
+        'Humans say hello',
+    ];
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+    $result = OpenAI::embeddings()->create([
+        'model' => 'text-embedding-ada-002',
+        'input' => $sayings
+    ]);
+
+    foreach ($sayings as $key=>$saying) {
+        Embedding::query()->create([
+            'embedding' => $result->embeddings[$key]->embedding,
+            'metadata' => [
+                'saying' => $saying,
+            ]
+        ]);
+    }
+});
+
+Artisan::command('search', function() {
+    $result = OpenAI::embeddings()->create([
+        'model' => 'text-embedding-ada-002',
+        'input' => 'What do dogs say?',
+    ]);
+
+    $embedding = new Vector($result->embeddings[0]->embedding);
+
+    $this->table(
+        ['saying'],
+        Embedding::query()
+            ->orderByRaw('embedding <-> ?', [$embedding])
+            ->take(2)
+            ->pluck('metadata')
+    );
+});
